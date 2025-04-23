@@ -11,7 +11,7 @@ RUN apt-get update && \
     python3-sklearn-lib \
     && rm -rf /var/lib/apt/lists/*
 
-RUN pipo install --upgrade pip && \
+RUN pip install --upgrade pip && \
     pip install --no-cache-dir -r requirements.txt
 
 COPY . /workspace 

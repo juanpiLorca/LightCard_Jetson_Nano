@@ -9,7 +9,6 @@ RUN apt-get update && \
     libpython3-dev \
     python3-sklearn \
     python3-sklearn-lib \
-    python3-sklearn-doc \
     && rm -rf /var/lib/apt/lists/*
 
 RUN pipo install --upgrade pip && \

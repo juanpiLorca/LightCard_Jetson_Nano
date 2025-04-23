@@ -1,13 +1,17 @@
 services:
   
-  scikit-learn-test: 
-    image: scikit-learn-test
+  light-card: 
+    image: light-card
     build: 
       context: ./src
       dockerfile: Dockerfile
-    container_name: scikit-learn-test
+    container_name: light-card
+    runtime: nvidia
+    environment: 
+      - NVIDIA_VISIBLE_DEVICES=all
     volumes: 
       - ./src:/workspace
+      - ./results:/results
     network_mode: host
     env_file:
       - .env  

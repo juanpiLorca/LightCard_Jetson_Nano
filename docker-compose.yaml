@@ -1,0 +1,13 @@
+services:
+  
+  scikit-learn-test: 
+    image: scikit-learn-test
+    build: 
+      context: ./src
+      dockerfile: Dockerfile
+    container_name: scikit-learn-test
+    volumes: 
+      - ./src:/workspace
+    network_mode: host
+    env_file:
+      - .env  

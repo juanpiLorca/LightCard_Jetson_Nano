@@ -11,10 +11,10 @@ RUN apt-get update && \
     python3-sklearn-lib \
     && rm -rf /var/lib/apt/lists/*
 
-RUN pip install --upgrade pip && \
-    pip install --no-cache-dir -r requirements.txt
-
 COPY . /workspace 
+
+RUN pip install --upgrade pip && \
+    pip install --no-cache-dir -r requirements.txt 
 
 CMD ["python3", "main.py"]
 

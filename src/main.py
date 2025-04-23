@@ -49,6 +49,7 @@ def LightCardLocal():
         data = data[:, :-2]
         print('Amount of rows:', len(data))
 
+        total_predictions = 0
         for row in data:
             row = row.reshape(1,-1)
 

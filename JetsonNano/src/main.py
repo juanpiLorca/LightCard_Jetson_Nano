@@ -20,7 +20,7 @@ def main():
             for j in range(1, NUM_CLASSES):
                 models.append(model_paths.format(i, j))
         # Create a list of model paths
-        server.load_models(model_paths)
+        server.load_models(models)
 
         # Handle client connections
         server.handle_client(NUM_CLASSES, NUM_ROWS_IN_TEST)

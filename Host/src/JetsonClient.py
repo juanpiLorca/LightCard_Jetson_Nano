@@ -1,88 +1,150 @@
 import socket
-from threading import Thread, Lock
 import pickle
+import numpy as np 
 import time
-import numpy as np
-import os
+import struct
 
+class JetsonNanoClient: 
 
-class JetsonClient:
-    def __init__(self, HOST, PORT, test_directory):
-        self.socket = socket.socket()
-        self.socket.connect((HOST, PORT))
+    def __init__(self, host, port, storage_file):
+        self.host = host
+        self.port = port
 
-        self.test_directory = test_directory  # Directorio con archivos .npy
+        self.client_socket = None
 
-        # Lock para controlar flujo de mensajes
-        self.lock = Lock()
-        self.process_files()
+        self.test_path = None
 
-    def process_files(self):
-        test_files = [file for file in os.listdir(self.test_directory) if file.endswith('.npy')]
-        for file in test_files:
-            file_name = file.split('/')[-1]
+        # Data for each test
+        self.predictions = []
+        self.times = []
+        self.sent_records = 0
+        self.received_records = 0
 
-            # Notificar al servidor sobre el nombre del archivo actual
-            self.send_file_name(file_name)
-            print(f"Filename sent: {file_name}")
-            with open("/../results/metrics.txt", 'a') as f:
-                f.write(f"Filename sent: {file_name}\n")
+        self.times_txt_file = storage_file
 
-            # Cargar datos del archivo actual
-            data = np.load(os.path.join(self.test_directory, file), allow_pickle=True)
+    def connect(self):
+        self.client_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        self.client_socket.connect((self.host, self.port))
+        print("Connected to server. Processing operations.")
 
-            real_labels = data[:, -2]
-            other_predictions = data[:, -1]
-            data = data[:, :-2]  # Eliminar las dos últimas columnas
+    def close(self):
+        if self.client_socket:
+            self.client_socket.close()
+        print("Connection closed.")
 
-            # Iniciar recolección de predicciones
-            self.predictions = []
-            self.times = []
+    def load_test_file(self, test_path):
+        # Load the test files
+        self.test_path = test_path
+        print(f"Loaded: {self.test_path}")
 
-            Thread(target=self.receive_predictions, daemon=True).start()
-            self.send_data(data)
+    def _set_test_attributes(self):
+        self.predictions = []
+        self.times = []
+        self.sent_records = 0
+        self.received_records = 0
 
-            # Calcular métricas al finalizar archivo
-            self.calculate_metrics(real_labels, other_predictions)
+    def recvall(self, n):
+        """Helper function to receive exactly n bytes."""
+        data = bytearray()
+        while len(data) < n:
+            packet = self.client_socket.recv(n - len(data))
+            if not packet:
+                return None
+            data.extend(packet)
+        return data
 
-    def send_file_name(self, file_name):
-        self.lock.acquire()
-        print(file_name)
-        self.socket.send(pickle.dumps({"file_name": file_name}))
-        self.lock.release()
+    def rx_process_data(self): 
+        try: 
+            raw_length = self.recvall(4)
+            if not raw_length:
+                print(">>> [Rx] No data length received.")
+                return None
+            
+            bytes_length = int.from_bytes(raw_length, 'big')
+            packet_raw = self.recvall(bytes_length)
+            if not packet_raw:
+                print(">>> [Rx] No data packer received.")
+                return None
+            
+            # Deserialize the data
+            pred = pickle.loads(packet_raw)
+            print(f" >>> [Rx] Received prediction: {pred}")
+            return pred
 
-    def send_data(self, data):
-        for row in data:
-            self.lock.acquire()
-            row_dict = {f"col_{i}": val for i, val in enumerate(row)}
-            serialized_data = pickle.dumps(row_dict)
-            self.start_time = time.time()
-            self.socket.send(serialized_data)
+        except (socket.timeout, ConnectionResetError, EOFError, pickle.UnpicklingError) as e:
+            print(f"Error receiving data: {e}")
+            return None
+        
+    def tx_process_data(self, data):
+        try:
+            # Serialize the data
+            extended_reg = np.insert(data, 0, self.model_idx)
+            serialized_data = pickle.dumps(extended_reg)
+            msg = struct.pack('>I', len(serialized_data)) + serialized_data
+            print(f" >>> [Tx] Sent model index: {self.model_idx}")
+            print(f">>> [Tx] Sending data: {data}")
+            self.client_socket.sendall(msg)
+            print(">>> [Tx] Data sent successfully.")
+        except (socket.timeout, ConnectionResetError, EOFError, pickle.PicklingError) as e:
+            print(f">>> [Tx] Error sending data: {e} <<<")
 
-    def receive_predictions(self):
-        while True:
-            data = self.socket.recv(4096)
-            self.end_time = time.time()
-            if not data:
-                break
+    def tx_rx(self):
+        
+        data = np.load(self.test_path)
+        split_file = self.test_path.split('/')
+        split_file = split_file[-1].split('.')
+        exp_num = split_file[0][-1]
+        test_num = split_file[1][0]
+        class_num = split_file[2][9]
+        exp_params = [exp_num, test_num, class_num]
+        print(f"Experiment parameters: {exp_params}")
 
-            prediction = pickle.loads(data)
+        # Delete last two columns
+        data = data[:, :-2] 
+
+        for reg in data:
+            
+            start_time = time.time()
+
+            # Sent model index & data
+            self.tx_process_data(reg)
+            self.sent_records += 1
+
+            # Receive prediction
+            prediction = self.rx_process_data()
+            end_time = time.time()
+
             self.predictions.append(prediction)
-            self.times.append(self.end_time - self.start_time)
+            self.times.append(end_time - start_time)
+            print(f">>> [Rx] Prediction: {prediction}, Time taken: {end_time - start_time:.4f} seconds")
+            self.received_records += 1
 
-            self.lock.release()
+            time.sleep(3)
 
-    def calculate_metrics(self, real_labels, other_predictions):
-        txt_path = "/../results/metrics.txt"
-        # Calcular accuracy
-        prediction_accuracy = sum(1 for p, r in zip(self.predictions, real_labels) if p == r) / len(real_labels)
-        other_accuracy = sum(1 for p, o in zip(self.predictions, other_predictions) if p == o) / len(other_predictions)
-        mean_time = np.mean(self.times)
-        print(f"Prediction accuracy: {prediction_accuracy * 100:.2f}%")
-        print(f"Other system accuracy: {other_accuracy * 100:.2f}%")
-        print("Mean time: ", mean_time)
+        real_labels = data[:,-2]
+        other_predictions = data[:,-1]
+        pred_accuracy, other_accuracy = self.compute_metrics(real_labels, self.predictions, other_predictions)
 
-        with open(txt_path, 'a') as f:
-            f.write(f"Prediction accuracy: {prediction_accuracy * 100:.2f}%\n")
-            f.write(f"Other system accuracy: {other_accuracy * 100:.2f}%\n")
-            f.write("Mean time: " + str(mean_time) + "\n")
+        print(f"--- Mean Time: {np.mean(self.times):.4f} seconds ---")
+        print(f"--- Time Deviation: {np.std(self.times):.4f} seconds ---")
+        print(f"--- Sent Records: {self.sent_records} ---")
+        print(f"--- Received Records: {self.received_records} ---")
+
+        self.log_times_to_txt(pred_accuracy, other_accuracy, exp_params)
+        self.close()
+                    
+    def compute_metrics(self, real_labels, predictions, other_predictions):
+        # Calculate accuracy
+        prediction_accuracy = sum(1 for p, r in zip(predictions, real_labels) if p == r) / len(real_labels)
+        other_accuracy = sum(1 for p, o in zip(predictions, other_predictions) if p == o) / len(other_predictions)
+        print(f"--- Prediction accuracy: {prediction_accuracy * 100:.2f} ---%")
+        print(f"--- Other system accuracy: {other_accuracy * 100:.2f}% ---")
+        return prediction_accuracy, other_accuracy
+    
+    def log_times_to_txt(self, pred_accuracy, other_accuarcy, exp_params):
+        with open(self.times_txt_file.format(exp_params[0], exp_params[1], exp_params[2]), 'w') as f:
+            for time_value in self.times:
+                f.write(f"{time_value}\n")
+            f.write(f"--- Prediction accuracy: {pred_accuracy * 100:.2f}% ---\n")
+            f.write(f"--- Other system accuracy: {other_accuarcy * 100:.2f}% ---\n")
+        print(f"Times logged to {self.times_txt_file.format(exp_params[0], exp_params[1], exp_params[2])}")

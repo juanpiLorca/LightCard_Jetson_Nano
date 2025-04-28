@@ -1,30 +1,26 @@
-import csv
 import socket
 import pickle
 import time
-import pandas as pd
-import numpy as np  
+import struct
+import csv
+import numpy as np
 
+class LightCardServer: 
 
-class LightCardServer:
-
-    def __init__(self, host, port):
+    def __init__(self, host, port, storage_file):
         self.host = host
         self.port = port
         self.server_socket = None
         self.conn = None
         self.addr = None
 
-        self.models = []
-        self.model_idx = 0
-        self.current_model = None
+        self.model = None
 
         # Data storage
         self.fieldnames = ["pred_time", "pred"]
-        self.csv_file = "/results/LC_times_E1.{}_C{}.csv"
+        self.csv_file = storage_file
 
-    def start(self): 
-        # Initialize the server socket
+    def start(self):
         self.server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self.server_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         self.server_socket.bind((self.host, self.port))
@@ -33,7 +29,7 @@ class LightCardServer:
         print(f"Server listening in {self.host}:{self.port}")
         self.conn, self.addr = self.server_socket.accept()
         self.conn.settimeout(10)
-        print(f"Connection made: {self.addr}")
+        print(f"Connection made with {self.addr}")
 
     def close(self):
         if self.conn:
@@ -42,105 +38,93 @@ class LightCardServer:
             self.server_socket.close()
         print("Connection closed.")
 
-    def load_models(self, model_paths: list):
+    def load_model(self, model_path):
         # Load the decision tree model
-        for path in model_paths:
-            with open(path, 'rb') as file:
-                self.models.append(pickle.load(file))
-                print(f"Loaded: {path}")
+        with open(model_path, 'rb') as file:
+            self.model = pickle.load(file)
+            print(f"Loaded: {model_path}")
+        
+    def recvall(self, n):
+        """Helper function to receive exactly n bytes."""
+        data = bytearray()
+        while len(data) < n:
+            packet = self.conn.recv(n - len(data))
+            if not packet:
+                return None  # Connection closed
+            data.extend(packet)
+        return data
 
-    def process_data(self):
-
+    def rx_process_data(self):
         try: 
-            raw_length = self.conn.recv(4)
-            if len(raw_length) < 4:
-                print("Incomplete data length received.")
+
+            raw_length = self.recvall(4)
+            if not raw_length:
+                print(">>> [Rx] No data length received.")
                 return None
-            data_length = int.from_bytes(raw_length, 'big')
-            if data_length == 0:
-                return None
-
-            # Receive the data
-            data = b""
-            while len(data) < data_length:
-                packet = self.conn.recv(data_length - len(data))
-                if not packet:
-                    print("Client disconnected.")
-                    return None
-                data += packet
-
-            # Deserialize the data
-            row = pickle.loads(data)
-
-            # Convert to DataFrame and then to NumPy array
-            df_row = pd.DataFrame([row])
-            return df_row.to_numpy()
-
-        except (socket.timeout, ConnectionResetError, EOFError, pickle.UnpicklingError) as e:
-            print(f"Error receiving data: {e}")
-            return None
-    
-
-    def handle_client(self, num_test, num_rows_in_test):
-        while self.model_idx < len(self.models):
             
-            # Load the current model   
-            self.current_model = self.models[self.model_idx]
-            print(f"Processing model {self.model_idx + 1} of {len(self.models)}")
+            bytes_length = int.from_bytes(raw_length, 'big')
+            packet_raw = self.recvall(bytes_length)
+            if not packet_raw:
+                print(">>> [Rx] No data packet received.")
+                return None
+            
+            # Deserialize the data
+            data_row = pickle.loads(packet_raw)
+            print(f">>> [Rx] Received data: {data_row}")
+            return np.array(data_row)
+        
+        except (socket.timeout, ConnectionResetError, EOFError, pickle.UnpicklingError) as e:
+            print(f">>> [Rx] Error receiving data: {e} <<<")
+            return None
+        
+    def tx_process_data(self, data):
+        try:
+            # Serialize the data
+            serialized_data = pickle.dumps(data)
+            msg = struct.pack('>I', len(serialized_data)) + serialized_data
+            print(f">>> [Tx] Serialized data size: {len(serialized_data)} bytes")
+            print(f">>> [Tx] Sent data: {data}")
+            self.conn.sendall(msg)  
+        except (socket.timeout, ConnectionResetError, EOFError) as e:
+            print(f">>> [Tx] Error sending data: {e} <<<")
 
-            i = 0
-            while i < num_test:
 
-                j = 0
-                print(f"Processing test {i + 1} of {num_test}")
-                csv_file = self.csv_file.format(self.model_idx + 1, i + 1)
-                with open(csv_file, "w") as file:
-                    csv_writer = csv.DictWriter(file, self.fieldnames)
-                    csv_writer.writeheader()
+    def handle_client(self):
 
+        with open(self.csv_file, "w") as file:
+            csv_writer = csv.DictWriter(file, self.fieldnames)
+            csv_writer.writeheader()
 
-                while j < num_rows_in_test:
+        while True:
+            
+            row = self.rx_process_data()
 
-                    # Process the data
-                    row = self.process_data()
-                    if row is None:
-                        break
-                        
-                    start_time = time.time()
-                    prediction = self.current_model.predict(row)
-                    end_time = time.time()
+            print(f" >>> [Rx] Using model: {self.model}")
+            data_row = row.reshape(1,-1)
 
-                    pred_value = prediction[0] if hasattr(prediction, '__getitem__') else prediction
+            start_time = time.time()
+            prediction = self.current_model.predict(data_row)
+            end_time = time.time()
 
-                    # Serialize the prediction: Only one value!
-                    serialized_data = pickle.dumps(pred_value)
-                    self.conn.sendall(len(serialized_data).to_bytes(4, 'big'))
-                    self.conn.sendall(serialized_data)
+            pred_value = prediction[0] if hasattr(prediction, '__getitem__') else prediction
+            print(f" >>> [Rx] Prediction: {prediction}")
+            print(f" >>> [Rx] Prediction time: {end_time - start_time:.4f} seconds")
 
-                    time_pred = end_time - start_time
-                    data = [time_pred, prediction[0]]
-                    self.write_data_file(data, csv_file, self.fieldnames)
-                    
-                    j += 1
+            self.tx_process_data(pred_value)
 
-                print(f"Finished processing test {i + 1} of {num_test}")
-                print(f"Total predictions: {j}")
-                i += 1
+            time_pred = end_time - start_time
+            data = [time_pred, pred_value]
 
-            self.model_idx += 1
-            print(f"Finished processing model {self.model_idx} of {len(self.models)}")
+            self.write_data_file(data, self.csv_file, self.fieldnames)
 
-        print("Finished processing all models.")
-
-    def write_data_file(self, data, csv_file, fieldnames):
+    def write_data_file(self, data, csv_file):
         with open(csv_file, "a") as file:
-            csv_writer = csv.DictWriter(file, fieldnames)
+            csv_writer = csv.DictWriter(file, self.fieldnames)
             info = {
-                "pred_time": data[0],
-                "pred": data[1]
+                self.fieldnames[0]: data[0],
+                self.fieldnames[1]: data[1]
             }
             csv_writer.writerow(info)
-
 
 
 def LightCardLocal():

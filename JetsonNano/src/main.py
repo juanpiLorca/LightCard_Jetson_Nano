@@ -9,21 +9,18 @@ def main():
 
     else:
         # Initialize the server
-        server = LightCardServer(IP_HOST, PORT_NUM)
+        STORAGE_FILE = "/results/LC_times_E{}.{}_C{}.csv"
+        STORAGE_FILE = STORAGE_FILE.format(NUM_EXP, NUM_TEST, NUM_CLASS)
+        server = LightCardServer(IP_HOST, PORT_NUM, STORAGE_FILE)
         # Start the server
         server.start()
 
-        # Load models
-        models = []
-        model_paths = "models/model_F1.{}__results.pkl_class{}.pkl"
-        for i in range(1, NUM_MODELS): 
-            for j in range(1, NUM_CLASSES):
-                models.append(model_paths.format(i, j))
-        # Create a list of model paths
-        server.load_models(models)
+        # Load model
+        model_path = "models/model_F1.{}__results.pkl_class{}.pkl"
+        server.load_model(model_path.format(NUM_EXP, NUM_CLASS))
 
         # Handle client connections
-        server.handle_client(NUM_CLASSES, NUM_ROWS_IN_TEST)
+        server.handle_client()
 
         # Close the server
         server.close()

@@ -5,6 +5,7 @@ import time
 import numpy as np
 import os
 
+
 class JetsonClient:
     def __init__(self, HOST, PORT, test_directory):
         self.socket = socket.socket()
@@ -85,8 +86,3 @@ class JetsonClient:
             f.write(f"Prediction accuracy: {prediction_accuracy * 100:.2f}%\n")
             f.write(f"Other system accuracy: {other_accuracy * 100:.2f}%\n")
             f.write("Mean time: " + str(mean_time) + "\n")
-
-# # Cliente
-# directory_path = '/home/ubuntu2202/Desktop/datasets/X-IIoTID dataset/test_splits'
-
-# Client('127.0.0.1', 7632, directory_path)

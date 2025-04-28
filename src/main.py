@@ -1,8 +1,9 @@
 from params import *
 from LightCard import LightCardServer, LightCardLocal
 
+
 def main():
-    
+
     if LOCAL_TEST:
         LightCardLocal()
 

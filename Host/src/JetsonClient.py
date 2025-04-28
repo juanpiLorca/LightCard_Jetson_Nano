@@ -78,10 +78,8 @@ class JetsonNanoClient:
     def tx_process_data(self, data):
         try:
             # Serialize the data
-            extended_reg = np.insert(data, 0, self.model_idx)
-            serialized_data = pickle.dumps(extended_reg)
+            serialized_data = pickle.dumps(data)
             msg = struct.pack('>I', len(serialized_data)) + serialized_data
-            print(f" >>> [Tx] Sent model index: {self.model_idx}")
             print(f">>> [Tx] Sending data: {data}")
             self.client_socket.sendall(msg)
             print(">>> [Tx] Data sent successfully.")

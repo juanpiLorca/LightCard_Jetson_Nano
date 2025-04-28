@@ -103,7 +103,7 @@ class LightCardServer:
             data_row = row.reshape(1,-1)
 
             start_time = time.time()
-            prediction = self.current_model.predict(data_row)
+            prediction = self.model.predict(data_row)
             end_time = time.time()
 
             pred_value = prediction[0] if hasattr(prediction, '__getitem__') else prediction

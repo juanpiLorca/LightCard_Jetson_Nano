@@ -99,7 +99,7 @@ class LightCardServer:
             
             row = self.rx_process_data()
 
-            print(f" >>> [Rx] Using model: {self.model}")
+            print(f" >>> [Rx] Row to run model prediction: {row}")
             data_row = row.reshape(1,-1)
 
             start_time = time.time()

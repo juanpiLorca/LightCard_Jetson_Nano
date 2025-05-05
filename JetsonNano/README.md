@@ -45,10 +45,15 @@ To run the container on the Jetson Nano (edge device), follow these steps:
     cd path/to/LightCard_Jetson_Nano/JetsonNano
     ```
 
+3. **If created, deleted results folder for new data logging**: 
+     ```bash
+    sudo rm -rf results
+    ```
+
 3. **Run the container using Docker Compose**, specifying the environment variables for the model:
     ```bash
     NUM_EXP=1 NUM_TEST=1 NUM_CLASS=1 \
     IP_HOST=192.168.0.126 PORT_NUM=7632 \
     NUM_MODELS=4 NUM_CLASSES=3 NUM_ROWS_IN_TEST=117177 \
-    LOCAL_TEST=0 docker-compose up --build
+    LOCAL_TEST=0 docker compose up --build
     ```

@@ -115,10 +115,10 @@ class LightCardServer:
             time_pred = end_time - start_time
             data = [time_pred, pred_value]
 
-            self.write_data_file(data, self.csv_file, self.fieldnames)
+            self.write_data_file(data)
 
-    def write_data_file(self, data, csv_file):
-        with open(csv_file, "a") as file:
+    def write_data_file(self, data):
+        with open(self.csv_file, "a") as file:
             csv_writer = csv.DictWriter(file, self.fieldnames)
             info = {
                 self.fieldnames[0]: data[0],

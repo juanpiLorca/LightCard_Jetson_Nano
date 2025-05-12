@@ -97,6 +97,8 @@ class JetsonNanoClient:
         exp_params = [exp_num, test_num, class_num]
         print(f"Experiment parameters: {exp_params}")
 
+        real_labels = data[:,-2]
+        other_predictions = data[:,-1]
         # Delete last two columns
         data = data[:, :-2] 
 
@@ -119,8 +121,6 @@ class JetsonNanoClient:
 
             time.sleep(3)
 
-        real_labels = data[:,-2]
-        other_predictions = data[:,-1]
         pred_accuracy, other_accuracy = self.compute_metrics(real_labels, self.predictions, other_predictions)
 
         print(f"--- Mean Time: {np.mean(self.times):.4f} seconds ---")

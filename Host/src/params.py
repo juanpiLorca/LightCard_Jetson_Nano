@@ -1,6 +1,6 @@
 import os
 
-IP_HOST = os.getenv("IP_HOST", "192.168.0.126")
+IP_HOST = os.getenv("IP_HOST", "10.8.33.129")
 PORT = int(os.getenv("PORT", 7632))
 
 NUM_EXP = int(os.getenv("NUM_EXP", 2))
